@@ -1,0 +1,371 @@
+{
+  "name": "AI Lead Qualifier & Auto-Responder (Discord alerts)",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"content\": \"🔥 **HOT LEAD ALERT!**\",\n  \"embeds\": [{\n    \"title\": \"🔥 \" + $('Parse AI Result1').first().json.name + \" — \" + ($('Parse AI Result1').first().json.company || 'No company'),\n    \"color\": 15548997,\n    \"fields\": [\n      { \"name\": \"📧 Email\", \"value\": $('Parse AI Result1').first().json.email || 'n/a', \"inline\": true },\n      { \"name\": \"🎯 Score\", \"value\": $('Parse AI Result1').first().json.score.toUpperCase(), \"inline\": true },\n      { \"name\": \"💬 Message\", \"value\": ($('Parse AI Result1').first().json.message || '').slice(0, 1000) },\n      { \"name\": \"🤖 Why hot\", \"value\": $('Parse AI Result1').first().json.reason || 'n/a' }\n    ],\n    \"footer\": { \"text\": \"⚡ Follow up ASAP! — Lead Qualifier bot\" }\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "11087b51-275e-406c-90ff-efef2983a48d",
+      "name": "Discord Hot Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-qualifier",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "d79b13f7-0e46-4351-bb5c-e76edf6f0758",
+      "name": "Lead Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        464
+      ],
+      "webhookId": "lead-qualifier-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <YOUR_GROQ_API_KEY>"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"temperature\": 0.4,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a lead qualification assistant for a business. Analyze this inquiry and respond with ONLY valid JSON, no markdown fences, in exactly this shape: {\\\"score\\\": \\\"hot|warm|cold\\\", \\\"reason\\\": \\\"one sentence why\\\", \\\"reply\\\": \\\"a short, warm, personalized email reply (2-4 sentences) addressed to the person by name, thanking them and responding to their specific message\\\"}.\\n\\nScoring rules: hot = clear buying intent, budget mentioned, urgent need, or asks for a call/quote. warm = genuine interest but vague or early stage. cold = spam, job seekers, vendors selling to us, or irrelevant.\\n\\nLead details:\\nName: \" + ($json.body.name || 'Unknown') + \"\\nEmail: \" + ($json.body.email || 'Unknown') + \"\\nCompany: \" + ($json.body.company || 'Not given') + \"\\nMessage: \" + ($json.body.message || '')\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "372cbc53-c81d-449f-a43a-0f856e67fc4a",
+      "name": "AI Qualify Lead (Gemini)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1392,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI's raw text answer\nconst aiText = $json.choices?.[0]?.message?.content || '{}';\n\n// Strip markdown fences if the model added them\nconst clean = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();\n\nlet ai;\ntry {\n  ai = JSON.parse(clean);\n} catch (e) {\n  ai = { score: 'warm', reason: 'AI response could not be parsed, defaulted to warm', reply: 'Thank you for reaching out! We received your message and will get back to you shortly.' };\n}\n\n// Merge with the original lead data from the webhook\nconst lead = $('Lead Webhook1').first().json.body || {};\n\nreturn [{\n  json: {\n    name: lead.name || 'Unknown',\n    email: lead.email || '',\n    company: lead.company || '',\n    message: lead.message || '',\n    score: (String(ai.score || 'warm')).toLowerCase().trim().replace(/[^a-z]/g, ''),\n    reason: ai.reason || '',\n    reply: ai.reply || '',\n    receivedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "0c1d2e67-6ed4-442f-a401-40fb1f56d328",
+      "name": "Parse AI Result1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, score: $json.score, message: 'Thanks ' + $json.name + '! We\\'ve received your inquiry and will be in touch soon.' }) }}",
+        "options": {}
+      },
+      "id": "879d27e4-5514-4478-840f-29be435a4aca",
+      "name": "Respond to Frontend1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -912,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1faxRTmHxnGmn5mR3RzH86QEG1HcQVX55ycVZy2iqeb4",
+          "mode": "list",
+          "cachedResultName": "Lead Qualifier",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1faxRTmHxnGmn5mR3RzH86QEG1HcQVX55ycVZy2iqeb4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1faxRTmHxnGmn5mR3RzH86QEG1HcQVX55ycVZy2iqeb4/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e3aa3c77-1c90-413c-89cb-a421d2ae121c",
+      "name": "Log to Google Sheets1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -672,
+        464
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2045CUmPdOASpl7V",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Thanks for reaching out, {{ $json.name }}!",
+        "message": "={{ $json.reply }}",
+        "options": {}
+      },
+      "id": "b9a58142-5ebe-4335-ad69-927998a030b2",
+      "name": "Send AI Reply Email1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        464
+      ],
+      "webhookId": "cf438d81-237d-4981-9f99-64310be1d357",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "71t74xaruUJE5MdF",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Parse AI Result1').first().json.score }}",
+              "rightValue": "hot",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "88026f02-805f-4428-8c39-1b0e45ca8da6"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b9481c98-f4bc-46c3-b617-58df56a7ce5b",
+      "name": "Is it a HOT lead?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        464
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "834f1d22-b0ed-4558-8ea7-2ec3be07b0cd",
+      "name": "Warm or Cold (no alert)1",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        16,
+        560
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Webhook1": {
+      "main": [
+        [
+          {
+            "node": "AI Qualify Lead (Gemini)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Qualify Lead (Gemini)1": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Result1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Frontend1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Frontend1": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets1": {
+      "main": [
+        [
+          {
+            "node": "Send AI Reply Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send AI Reply Email1": {
+      "main": [
+        [
+          {
+            "node": "Is it a HOT lead?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it a HOT lead?1": {
+      "main": [
+        [
+          {
+            "node": "Discord Hot Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Warm or Cold (no alert)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "2c5476b2-9574-421b-8c64-c55b67bbf030",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6efa566c1e5c9ae48fb504b400b79e60852d66a14e832f7a7a0362ce2f149fd7"
+  },
+  "nodeGroups": [],
+  "id": "KQrvJO5mkRloJC8Q",
+  "tags": []
+}
